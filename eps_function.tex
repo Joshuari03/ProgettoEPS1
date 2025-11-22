@@ -1,0 +1,329 @@
+% This LaTeX was auto-generated from MATLAB code.
+% To make changes, update the MATLAB code and export to LaTeX again.
+
+\documentclass{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{graphicx}
+\usepackage{color}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{epstopdf}
+\usepackage[table]{xcolor}
+\usepackage{matlab}
+\usepackage[paperheight=795pt,paperwidth=614pt,top=72pt,bottom=72pt,right=72pt,left=72pt,heightrounded]{geometry}
+
+\sloppy
+\epstopdfsetup{outdir=./}
+\graphicspath{ {./eps_function_media/} }
+
+\begin{document}
+
+\begin{par}
+\begin{center}
+\textit{\textbf{Power Flow Analysis on Medium Sized Systems}}
+\end{center}
+\end{par}
+
+\begin{par}
+\begin{flushleft}
+\textit{\textbf{ }}Implementation of a function that makes a Fast Decoupled power flow by providing any input data.
+\end{flushleft}
+\end{par}
+
+
+\vspace{1em}
+\begin{par}
+\begin{flushleft}
+It is based on a mixed formulation of power flows:
+\end{flushleft}
+\end{par}
+
+\begin{itemize}
+\setlength{\itemsep}{-1ex}
+   \item{\begin{flushleft}  voltages in polar coordinates and \end{flushleft}}
+   \item{\begin{flushleft}  elements of [Y] in rectangular coordinates \end{flushleft}}
+\end{itemize}
+
+\begin{par}
+\begin{flushleft}
+So the equations become: $\left\lbrace \begin{array}{l}
+P_p =V_p \sum_{q=1}^n \left(G_{pq} V_q \cos \delta_{pq} +B_{pq} V_q \sin \delta_{pq} \right)\\
+Q_p =V_p \sum_{q=1}^n \left(G_{pq} V_q \sin \delta_{pq} -B_{pq} V_q \cos \delta_{pq} \right)
+\end{array}\right.$
+\end{flushleft}
+\end{par}
+
+\begin{par}
+\begin{flushleft}
+Assuming the real-reactive decoupling, and computing the Jacobian
+\end{flushleft}
+\end{par}
+
+\begin{par}
+\begin{flushleft}
+elements, and then assuming also $\delta_p -\delta_q \approx 0\Rightarrow \left\lbrace \begin{array}{l}
+\cos \delta_{pq} \approx 1\\
+\sin \delta_{pq} \approx 0
+\end{array}\right.$
+\end{flushleft}
+\end{par}
+
+\begin{par}
+$$\begin{array}{l}
+G_{pq} <<B_{pq} \\
+Q_p <<B_{pp} V_p^2 
+\end{array}$$
+\end{par}
+
+\begin{par}
+\begin{flushleft}
+We obtain $\left\lbrace \begin{array}{l}
+\frac{\Delta P_p }{V_p }=\sum_{q=1}^n \left(-B_{pq} \right)\left(V_q \Delta \delta_q \right)\\
+\frac{\Delta Q_p }{V_p }=\sum_{q=1}^n \left(-B_{pq} \right)\left(\Delta V_q \right)
+\end{array}\right.$
+\end{flushleft}
+\end{par}
+
+\begin{par}
+\begin{flushleft}
+And with further assumptions: $\left\lbrace \begin{array}{l}
+\left\lbrack \frac{\Delta P}{V}\right\rbrack =\left\lbrack B^{\prime } \right\rbrack \left\lbrack \Delta \delta \right\rbrack \\
+\left\lbrack \frac{\Delta Q}{V}\right\rbrack =\left\lbrack B^{\prime \prime } \right\rbrack \left\lbrack \Delta V\right\rbrack 
+\end{array}\right.$
+\end{flushleft}
+\end{par}
+
+\begin{par}
+\begin{flushleft}
+At this point, the elements of the [B’] and [B’’] matrices are strictly negated elements of the imaginary part of the bus admittance matrix [Y]
+\end{flushleft}
+\end{par}
+
+\begin{itemize}
+\setlength{\itemsep}{-1ex}
+   \item{\begin{flushleft} [B’] is built omitting the row and column relevant to the slack bus \end{flushleft}}
+   \item{\begin{flushleft} [B’’] is built omitting rows and columns relevant to the slack and PV busses \end{flushleft}}
+\end{itemize}
+
+\begin{matlabcode}
+clear; clc;
+\end{matlabcode}
+
+
+\vspace{1em}
+\begin{matlabcode}
+%download of the information from the excel
+bus_data=readtable('Data.xlsx', Sheet='Bus'); 
+\end{matlabcode}
+\begin{matlaboutput}
+Warning: Column headers from the file were modified to make them valid MATLAB identifiers before creating variable names for the table. The original column headers are saved in the VariableDescriptions property.
+Set 'VariableNamingRule' to 'preserve' to use the original column headers as table variable names.
+\end{matlaboutput}
+\begin{matlabcode}
+gen_data=readtable('Data.xlsx', Sheet='Generators');
+\end{matlabcode}
+\begin{matlaboutput}
+Warning: Column headers from the file were modified to make them valid MATLAB identifiers before creating variable names for the table. The original column headers are saved in the VariableDescriptions property.
+Set 'VariableNamingRule' to 'preserve' to use the original column headers as table variable names.
+\end{matlaboutput}
+\begin{matlabcode}
+branch_data=readtable('Data.xlsx', Sheet='Branches');
+\end{matlabcode}
+\begin{matlaboutput}
+Warning: Column headers from the file were modified to make them valid MATLAB identifiers before creating variable names for the table. The original column headers are saved in the VariableDescriptions property.
+Set 'VariableNamingRule' to 'preserve' to use the original column headers as table variable names.
+\end{matlaboutput}
+
+
+\begin{matlabcode}
+A_ref = 100; %MW
+%construction of the Y matrix by inspection, without considering the phase
+%shifter/tap changer of the transformers
+Y=NaN(length(bus_data.Node));
+for i=1:length(bus_data.Node)
+    for j=1:length(bus_data.Node)
+        if(i==j) %on the diagonal
+            cond=(branch_data.From_node==i|branch_data.To_node==i); %the line that is connected to the bus
+            Y(j,i)=sum((branch_data.R_pu_(cond)+1i*branch_data.X_pu_(cond)).^-1+(1i*branch_data.B_pu_(cond)+branch_data.G_pu_(cond))/2);
+        else %off diagonal
+            cond = (branch_data.From_node == i & branch_data.To_node == j) |...
+                   (branch_data.From_node == j & branch_data.To_node == i); % the line that is between a bus and the other
+            Y(j,i)=-sum((branch_data.R_pu_(cond)+1i*branch_data.X_pu_(cond)).^-1);  
+        end  
+    end
+end
+%------
+slack = bus_data.Node(contains(bus_data.Type,'SLACK')); %which bus is slack
+PV_buses = [bus_data.Node(contains(bus_data.Type,'PV'))]; %indices of PV_buses
+%------
+t=contains(branch_data.Type,'Transformer');%find the the branch where the transformer is
+c=bus_data.Vn_kV_(branch_data.From_node(t~=0))>bus_data.Vn_kV_(branch_data.To_node(t~=0)); %gives the condition of which transofrmer is on HV-MV
+Ph_shifters=[branch_data.From_node(t).*c, branch_data.To_node(t).*c]+[branch_data.To_node(t).*(c==0),branch_data.From_node(t).*(c==0)]; %create the phase shifters indeces matrix (first col=HV, second col=MV) 
+%------
+\end{matlabcode}
+
+
+\begin{matlabcode}
+%calculate the parameters of the transformers
+y_sc=1./(1i*branch_data.X_pu_(t)+branch_data.R_pu_(t));
+b0 = branch_data.G_pu_(t)+1i*branch_data.B_pu_(t);
+tap_position = [0; 0; 0; 0]; %put in each row the tap position of the corresponding PST in the
+                             %vector above
+tap_nominal = [0; 0; 0; 0];
+ontr = [branch_data.Off_nominalTapRatio_pu_(t)];      %off nominal tap ratio of each transformer
+
+delta_V_pu = branch_data.Step(t).*contains(branch_data.TypeOfController(t),'AVR'); %delta_V pu
+omega = [0; 0; 0; 0;];%insert the angle position 
+N_pu = ontr.*(1+(tap_position-tap_nominal).*delta_V_pu).*exp(1j*omega);
+
+%CODE TO INSERT THE TRANSFORMERS MATRIXES INTO Y
+if any(N_pu-1) %true if at least 1 element of N_pu-1 is different from zero (i.e. not all N_pu=1)
+    for i=1:length(Ph_shifters)
+        %Insert A
+        %the first element remains the same because we already included y_sc-jb0/2 in Y
+        %Insert B
+        Y(Ph_shifters(i,2), Ph_shifters(i,1)) = Y(Ph_shifters(i,1), Ph_shifters(i,2))+y_sc(i)-y_sc(i)/N_pu
+        %Insert C
+        Y(Ph_shifters(i,1), Ph_shifters(i,2)) = Y(Ph_shifters(i,2), Ph_shifters(i,1))+y_sc(i)-y_sc(i)/(N_pu')
+        %Insert D
+        Y(Ph_shifters(i,1), Ph_shifters(i,1)) = Y(Ph_shifters(i,1), Ph_shifters(i,1))-(y_sc(i)-1j*b0(i)/2)+(y_sc(i)-1j*b0(i)/2)/abs(N_pu)^2
+        
+    end
+end
+
+\end{matlabcode}
+
+
+\begin{matlabcode}
+N = length(bus_data.Node);
+deltas = zeros(N, 1);
+
+rows = true(1, N);
+cols = true(1, N);
+
+%Construction of [B']
+rows(slack) = false;  % exclude the slack row
+cols(slack) = false;  % exclude the slack column
+B_prime = -imag(Y(rows, cols));
+
+%Construction of [B'']
+if ~isempty(PV_buses)
+    rows (PV_buses) = false; %exclude also the PV buses rows
+    cols (PV_buses) = false; %exclude also the PV buses columns
+end
+B_second = -imag(Y(rows, cols));
+
+V = ones(N, 1);
+if ~isempty(PV_buses)
+    V(~rows) = gen_data.V_pu_; %Assign the correct voltage value to PV_buses
+end
+
+P_tilde(~rows) = gen_data.Pgen_MW_-bus_data.P_load_MW_(~rows); %PV buses and slack
+P_tilde(rows) = -bus_data.P_load_MW_(rows);                    %other buses
+P_tilde = P_tilde';
+P_tilde = P_tilde./A_ref; %in PU
+Q_tilde(rows) = -bus_data.Q_load_Mvar_(rows); %the same
+Q_tilde(~rows) = 0;
+Q_tilde = Q_tilde.';
+Q_tilde = Q_tilde./A_ref; %in PU
+
+epsilon = 1e-4; %Precision required
+
+%Compute the initial values for P
+P_c = P_calc(deltas, slack, V, Y);
+%Compute the initial residues
+res_P = (P_tilde-P_c)./V;
+deltas(1:end ~= slack) = deltas(1:end ~= slack) + B_prime^-1*res_P(1:end ~= slack);
+%Compute the initial values for Q
+Q_c = Q_calc(deltas, slack, V, Y, PV_buses);
+%Compute the initial residues
+res_Q = (Q_tilde-Q_c)./V;
+V(rows) = V(rows) + B_second^-1*res_Q(rows);
+\end{matlabcode}
+
+\vspace{1em}
+
+\matlabheadingthree{Iterations}
+
+\begin{par}
+\hfill \break
+\end{par}
+
+\begin{matlabcode}
+counter = 0;
+while max(abs([res_P; res_Q])) > epsilon
+
+    P_c = P_calc(deltas, slack, V, Y);
+    res_P = (P_tilde-P_c)./V;
+    deltas(1:end ~= slack) = deltas(1:end ~= slack) + B_prime^-1*res_P(1:end ~= slack);
+    Q_c = Q_calc(deltas, slack, V, Y, PV_buses);
+    res_Q = (Q_tilde-Q_c)./V;
+    V(rows) = V(rows) + B_second^-1*res_Q(rows); %rows is a logic vector that contains false on the rows
+                                                 % corresponding to PV buses AND slack bus. We want to 
+                                                 % perform the computation only on PQ buses, so this 
+                                                 % is the way.
+    
+    Q_c_PV = Q_calc (deltas, slack, V, Y, setdiff(1:length(deltas), [slack; PV_buses])); %This calculates Q AT the PV buses
+    %Check if the generators reach the Q limits. In that case, remove their
+    %index from PV_buses and include them in rows and cols
+    Q_gen = Q_c_PV(PV_buses) + bus_data.Q_load_Mvar_(PV_buses)/A_ref; 
+    for n = 1:length(Q_gen)
+        if ( Q_gen(n)>gen_data.Qmax_Mvar_(gen_data.Bus==PV_buses(n))/A_ref | Q_gen(n)<gen_data.Qmin_Mvar_(gen_data.Bus==PV_buses(n))/A_ref )
+            
+            %Re-construction of [B''] after changing the bus type
+            rows (PV_buses(n)) = true; %re-include this row
+            cols (PV_buses(n)) = true; %re-include this column
+            B_second = -imag(Y(rows, cols));
+            
+            %Q_tilde of the new PQ bus
+            if Q_gen(n)>=gen_data.Qmax_Mvar_(gen_data.Bus==PV_buses(n))/A_ref
+                Q_tilde(PV_buses(n)) = (gen_data.Qmax_Mvar_(gen_data.Bus==PV_buses(n))-bus_data.Q_load_Mvar_(PV_buses(n)))/A_ref;
+            elseif Q_gen(n)<=gen_data.Qmin_Mvar_(gen_data.Bus==PV_buses(n))/A_ref
+                Q_tilde(PV_buses(n)) = (gen_data.Qmin_Mvar_(gen_data.Bus==PV_buses(n))-bus_data.Q_load_Mvar_(PV_buses(n)))/A_ref;
+            end
+        
+            PV_buses(n) = 0;
+         end
+
+    end
+    PV_buses(PV_buses==0) = [];
+    counter = counter + 1;
+ 
+end
+
+\end{matlabcode}
+
+\vspace{1em}
+
+\matlabheadingthree{Functions}
+
+\begin{par}
+\hfill \break
+\end{par}
+
+\begin{matlabcode}
+function P = P_calc(delta, slack, Voltages, Adm)
+    P= zeros(length(delta), 1);
+    for i=1:length(delta)
+        if i~= slack
+            P(i)=Voltages(i)*(Voltages.'*(abs(Adm(i, :).').*cos(delta(i)-delta-angle(Adm(i,:).'))));
+        end
+    end
+end
+
+function Q = Q_calc(delta, slack, Voltages, Adm, PV_location)
+    Q= zeros(length(delta), 1);
+    for  i = setdiff(1:length(delta), PV_location) %setdiff creates a vector of integers from 1 to
+                                                   %length(delta)=N excluding the ones in PV_location
+        if i ~= slack
+            Q(i)=Voltages(i)*(Voltages.'*(abs(Adm(i, :).').*sin(delta(i)-delta-angle(Adm(i,:).'))));
+        end
+    end
+end
+\end{matlabcode}
+
+\end{document}
